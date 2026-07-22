@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.3.0
+// @version        1.3.1
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background
 // @author         Impre
 // @include        main
@@ -152,17 +152,31 @@
         middleClickFocus() {
             const PREF_URLBAR = 'zen.urlbar.behavior';
 
+            // Tracker les ouvertures d'onglets pour détecter les clics sur liens.
+            // On NE FAIT PAS preventDefault — Firefox gère l'événement naturellement:
+            //   - Clic sur un lien → nouvel onglet (TabOpen) → on détecte → on skip l'urlbar
+            //   - Clic sur le background → rien ne se passe → on ouvre l'urlbar
+            // Firefox fait déjà toute la détection (liens, boutons, form elements, etc.)
+            let lastTabOpen = 0;
+            gBrowser.tabContainer.addEventListener('TabOpen', () => {
+                lastTabOpen = Date.now();
+            });
+
             window.addEventListener('mousedown', (e) => {
                 if (e.button !== 1) return;
                 if (e.target.closest('#navigator-toolbox, #urlbar')) return;
 
-                e.preventDefault();
-                e.stopPropagation();
-                this.floatingActive = true;
-                Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
+                // NE PAS preventDefault — laisser Firefox traiter l'événement
+                const self = this;
                 setTimeout(() => {
+                    // Un onglet s'est ouvert = clic sur lien → ne pas ouvrir l'urlbar
+                    if (Date.now() - lastTabOpen < 250) return;
+
+                    // Pas d'onglet = clic sur background → urlbar flottante
+                    self.floatingActive = true;
+                    Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
                     document.getElementById('Browser:OpenLocation').doCommand();
-                }, 50);
+                }, 150);
             }, true);
 
             gURLBar.inputField.addEventListener('blur', () => {
