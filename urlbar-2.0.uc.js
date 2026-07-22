@@ -91,15 +91,15 @@
             const original = gURLBar._whereToOpen.bind(gURLBar);
 
             gURLBar._whereToOpen = function (event) {
-                const where = original(event);
-                // button === 1 = middle-click. "tab" = foreground, "tabshifted" = background.
-                if (event && event.button === 1 && where === 'tab') {
+                // Middle-click (button 1) = TOUJOURS background tab (tabshifted)
+                // peu importe la pref zen.urlbar.replace-newtab ou ce que Zen voulait faire
+                if (event && event.button === 1) {
                     return 'tabshifted';
                 }
-                return where;
+                return original(event);
             };
 
-            this.log('middleClickBackground actif (favoris → background tab)');
+            this.log('middleClickBackground actif (middle-click → background tab)');
         },
     };
 
