@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.2.0
+// @version        1.3.0
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background
 // @author         Impre
 // @include        main
@@ -34,27 +34,6 @@
         'support':     'about:support',
     };
 
-    // Icon key → filename mapping (PNGs dans zen-about-favicons/icons/)
-    const ICON_MAP = {
-        'preferences': 'preferences.png',
-        'config':      'config.png',
-        'addons':      'addons.png',
-        'processes':   'processes.png',
-        'newtab':      'newtab.png',
-        'debugging':   'debugging.png',
-        'support':     'support.png',
-    };
-
-    // Extrait la clé d'icône depuis une URL
-    // about:config → 'config', #zenabout=config → 'config'
-    function getIconKey(url) {
-        const hashMatch = url.match(/#zenabout=(.+)$/);
-        if (hashMatch) return hashMatch[1];
-        const aboutMatch = url.match(/^about:([a-z]+)/);
-        if (aboutMatch) return aboutMatch[1];
-        return null;
-    }
-
     // ═══════════════════════════════════════════════════
 
     const URLBar20 = {
@@ -66,27 +45,87 @@
         // Cache des data URLs d'icônes (key → data:image/png;base64,...)
         iconCache: {},
 
-        // Charge les icônes PNG depuis zen-about-favicons/icons/ en mémoire
+        // Map domaine → clé d'icône (chargé depuis favicon-map.json)
+        // ex: { "chat.mistral.ai": "lechat", "chatgpt.com": "chatgpt" }
+        domainToIconKey: {},
+
+        // Auto-scan les dossiers d'icônes — aucune liste hardcoded
+        // Scan: zen-about-favicons/icons/ + CustomFavicon/icons/
+        // Clé = nom de fichier sans extension, lowercased
         async loadIcons() {
-            const iconDir = PathUtils.join(
-                PathUtils.profileDir, 'chrome', 'sine-mods', 'zen-about-favicons', 'icons'
-            );
-            for (const [key, filename] of Object.entries(ICON_MAP)) {
+            const dirs = [
+                PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'zen-about-favicons', 'icons'),
+                PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'CustomFavicon', 'icons'),
+            ];
+            for (const dir of dirs) {
                 try {
-                    const path = PathUtils.join(iconDir, filename);
-                    if (!(await IOUtils.exists(path))) continue;
-                    const bytes = await IOUtils.read(path);
-                    let binary = '';
-                    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-                    this.iconCache[key] = 'data:image/png;base64,' + btoa(binary);
-                } catch (e) { /* icône manquante, skip */ }
+                    if (!(await IOUtils.exists(dir))) continue;
+                    const files = await IOUtils.getChildren(dir);
+                    for (const filePath of files) {
+                        if (!filePath.toLowerCase().endsWith('.png')) continue;
+                        // Extrait la clé: config.png → 'config', ChatGPT.png → 'chatgpt'
+                        const filename = filePath.split(/[/\\]/).pop();
+                        const key = filename.replace(/\.png$/i, '').toLowerCase();
+                        try {
+                            const bytes = await IOUtils.read(filePath);
+                            let binary = '';
+                            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+                            this.iconCache[key] = 'data:image/png;base64,' + btoa(binary);
+                        } catch (e) { /* skip */ }
+                    }
+                } catch (e) { /* dossier manquant, skip */ }
             }
+            // Charger favicon-map.json pour le lookup domaine → icône
+            try {
+                const mapPath = PathUtils.join(
+                    PathUtils.profileDir, 'chrome', 'sine-mods', 'CustomFavicon', 'favicon-map.json'
+                );
+                if (await IOUtils.exists(mapPath)) {
+                    const bytes = await IOUtils.read(mapPath);
+                    const text = new TextDecoder().decode(bytes);
+                    const map = JSON.parse(text);
+                    if (map.custom) {
+                        for (const [domain, filename] of Object.entries(map.custom)) {
+                            this.domainToIconKey[domain] = filename.replace(/\.png$/i, '').toLowerCase();
+                        }
+                    }
+                }
+            } catch (e) { /* favicon-map.json manquant, fallback générique */ }
+
             // Processes: icône chrome native (SVG) — pas de PNG dispo
             if (!this.iconCache['processes']) {
                 this.iconCache['processes'] = 'chrome://global/skin/icons/performance.svg';
             }
 
-            this.log(`iconCache: ${Object.keys(this.iconCache).length} icônes chargées`);
+            this.log(`iconCache: ${Object.keys(this.iconCache).length} icônes, ${Object.keys(this.domainToIconKey).length} domaines mappés`);
+        },
+
+        // Extrait une clé d'icône depuis une URL — essaie plusieurs stratégies
+        // 1. favicon-map.json (lookup exact par hostname) ← le plus fiable
+        // 2. #zenabout=config → 'config'
+        // 3. about:config → 'config'
+        // 4. shortcuts/chatgpt.html → 'chatgpt'
+        // 5. hostname.split('.')[0] → fallback générique
+        getIconKey(url) {
+            if (!url) return null;
+            // Hash URL: #zenabout=config
+            const hashMatch = url.match(/#zenabout=(.+)$/);
+            if (hashMatch) return hashMatch[1].toLowerCase();
+            // About: URL: about:config, about:debugging#/setup
+            const aboutMatch = url.match(/^about:([a-z]+)/);
+            if (aboutMatch) return aboutMatch[1];
+            // File URL: shortcuts/chatgpt.html → 'chatgpt'
+            const fileMatch = url.match(/\/shortcuts\/(.+?)\.html/);
+            if (fileMatch) return fileMatch[1].toLowerCase();
+            // Domain-based: lookup favicon-map.json puis fallback générique
+            try {
+                const u = new URL(url);
+                const host = u.hostname.replace(/^www\./, '');
+                // Lookup exact dans favicon-map.json
+                if (this.domainToIconKey[host]) return this.domainToIconKey[host];
+                return host.split('.')[0].toLowerCase();
+            } catch (e) {}
+            return null;
         },
 
         init() {
@@ -245,15 +284,13 @@
                         ctx.results = savedResults;
                     }
 
-                    // Injecter les icônes about: depuis iconCache
-                    if (wantCompact) {
-                        ctx.results.forEach(r => {
-                            const key = getIconKey(r.payload?.url || '');
-                            if (key && self.iconCache[key]) {
-                                r.payload.icon = self.iconCache[key];
-                            }
-                        });
-                    }
+                    // Injecter les icônes depuis iconCache (tous modes)
+                    ctx.results.forEach(r => {
+                        const key = self.getIconKey(r.payload?.url || '');
+                        if (key && self.iconCache[key]) {
+                            r.payload.icon = self.iconCache[key];
+                        }
+                    });
 
                     const result = origOnQueryResults(ctx);
 
