@@ -166,11 +166,22 @@
                 if (e.button !== 1) return;
                 if (e.target.closest('#navigator-toolbox, #urlbar')) return;
 
+                // Capturer l'état SYNCHRONEMENT avant que le blur ne fire
+                // (le middle-click sur le background blur l'urlbar instantanément)
+                const wasActive = this.floatingActive;
+
                 // NE PAS preventDefault — laisser Firefox traiter l'événement
                 const self = this;
                 setTimeout(() => {
                     // Un onglet s'est ouvert = clic sur lien → ne pas ouvrir l'urlbar
                     if (Date.now() - lastTabOpen < 250) return;
+
+                    // Toggle: si était active → fermer, sinon → ouvrir
+                    if (wasActive) {
+                        self.floatingActive = false;
+                        Services.prefs.setStringPref(PREF_URLBAR, 'normal');
+                        return;
+                    }
 
                     // Pas d'onglet = clic sur background → urlbar flottante
                     self.floatingActive = true;
