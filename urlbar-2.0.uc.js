@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.3.1
+// @version        1.4.0
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background
 // @author         Impre
 // @include        main
@@ -186,7 +186,45 @@
                 }
             });
 
-            this.log('middleClickFocus actif (middle-click → floating urlbar ✨)');
+            // ── ENTER → floating URL bar ──
+            // Le frame script intercepte Enter directement dans le contenu web.
+            // Avantage: accès complet au DOM (activeElement, isContentEditable, etc.)
+            //   - Input/Textarea/contentEditable focusé → on laisse passer (form submit)
+            //   - Sinon → preventDefault + message async → chrome ouvre l'urlbar flottante
+            const FRAME_SCRIPT_ENTER = `
+                (function() {
+                    function isInField() {
+                        let el = content.document.activeElement;
+                        if (!el) return false;
+                        let tag = el.tagName;
+                        if (tag === 'INPUT') {
+                            let type = (el.type || '').toLowerCase();
+                            // Exclude button-like inputs from blocking Enter
+                            if (type === 'button' || type === 'submit' || type === 'reset' || type === 'checkbox' || type === 'radio') return false;
+                            return true;
+                        }
+                        return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+                    }
+                    addEventListener('keydown', function(e) {
+                        if (e.key !== 'Enter') return;
+                        if (isInField()) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        sendAsyncMessage('UrlBar20:OpenUrlBar', {});
+                    }, true);
+                })();
+            `;
+            Services.mm.loadFrameScript('data:text/javascript,' + encodeURIComponent(FRAME_SCRIPT_ENTER), true);
+
+            // Chrome: recevoir les messages du frame script
+            Services.mm.addMessageListener('UrlBar20:OpenUrlBar', () => {
+                if (gURLBar.focused) return;
+                this.floatingActive = true;
+                Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
+                document.getElementById('Browser:OpenLocation').doCommand();
+            });
+
+            this.log('middleClickFocus actif (middle-click + Enter → floating urlbar ✨)');
         },
 
         // ═══════════════════════════════════════════════════
