@@ -199,7 +199,7 @@
                     self.floatingActive = true;
                     Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
                     document.getElementById('Browser:OpenLocation').doCommand();
-                }, 150);
+                }, 200);
             }, true);
 
             gURLBar.inputField.addEventListener('blur', () => {
