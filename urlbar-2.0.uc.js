@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.4.0
-// @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background
+// @version        1.5.0
+// @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background + compact mode TB fix
 // @author         Impre
 // @include        main
 // ==/UserScript==
@@ -40,7 +40,14 @@
         log(msg) { console.log('%c[URLBar-2.0]', 'color:#00d4ff;font-weight:bold', msg); },
 
         // Flag partagé — true quand l'urlbar flottante est active
-        floatingActive: false,
+        // Getter/setter avec hover lock automatique à la fermeture (anti-flash)
+        _floatingActive: false,
+        _hoverLockUntil: 0,
+        get floatingActive() { return this._floatingActive; },
+        set floatingActive(v) {
+            if (this._floatingActive && !v) this._hoverLockUntil = Date.now() + 400;
+            this._floatingActive = v;
+        },
 
         // Cache des data URLs d'icônes (key → data:image/png;base64,...)
         iconCache: {},
@@ -138,10 +145,7 @@
             this.aboutRedirect();          // Feature #2a: Hash-redirect about: pages
             this.loadIcons();              // Charge les icônes about: en mémoire
             this.dynamicBookmarks();       // Feature #2b: Dynamic bookmark filtering
-
-            // Future modules
-            // this.sidebotIntegration(); // Feature #3
-            // this.topUrlbarStyle();     // Feature #4
+            this.compactModeFix();         // Feature #4: Masquer TB quand urlbar flottante
 
             this.log('initialized ✅');
         },
@@ -367,6 +371,52 @@
             };
 
             this.log('dynamicBookmarks actif (compact ↔ extended filtering)');
+        },
+
+        // ═══════════════════════════════════════════════════
+        // Module: Compact Mode Fix (Feature #4)
+        //
+        // Quand l'urlbar flottante est ouverte, Zen set automatiquement
+        // zen-compact-mode-active sur #zen-appcontent-navbar-wrapper →
+        // le wrapper passe à 68px → la titlebar/bookmarks apparaissent.
+        //
+        // Solution: monkey-patcher _setElementExpandAttribute pour bloquer
+        // l'attribut zen-compact-mode-active quand floatingActive = true.
+        // L'urlbar (position:fixed, z-index:1000) reste visible.
+        // Le wrapper reste à 8px → pas de push, pas de TB.
+        //
+        // Anti-flash: au moment de la fermeture, _hoverLockUntil bloque
+        // brièvement zen-has-hover pour éviter que le wrapper ne se rouvre
+        // pendant la transition.
+        // ═══════════════════════════════════════════════════
+        compactModeFix() {
+            if (!window.gZenCompactModeManager?._setElementExpandAttribute) {
+                setTimeout(() => this.compactModeFix(), 500);
+                return;
+            }
+            if (window.__URLBar20CompactPatch) return;
+            window.__URLBar20CompactPatch = true;
+
+            const self = this;
+            const orig = gZenCompactModeManager._setElementExpandAttribute.bind(gZenCompactModeManager);
+
+            gZenCompactModeManager._setElementExpandAttribute = function (element, value, attr = 'zen-has-hover') {
+                const isWrapper = element?.id === 'zen-appcontent-navbar-wrapper';
+
+                // Bloquer zen-compact-mode-active quand l'urlbar flottante est active
+                if (isWrapper && attr === 'zen-compact-mode-active' && self.floatingActive) {
+                    return; // Skip — le wrapper reste à 8px
+                }
+
+                // Anti-flash: bloquer zen-has-hover brièvement après fermeture
+                if (isWrapper && attr === 'zen-has-hover' && value && Date.now() < self._hoverLockUntil) {
+                    return; // Skip — évite le flash du vrai urlbar
+                }
+
+                return orig(element, value, attr);
+            };
+
+            this.log('compactModeFix actif (TB masquée pendant urlbar flottante ✨)');
         },
     };
 
