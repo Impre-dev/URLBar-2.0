@@ -45,7 +45,15 @@
         _hoverLockUntil: 0,
         get floatingActive() { return this._floatingActive; },
         set floatingActive(v) {
-            if (this._floatingActive && !v) this._hoverLockUntil = Date.now() + 400;
+            if (this._floatingActive && !v) {
+                // Anti-flash: hover lock + cacher #urlbar pendant la transition
+                this._hoverLockUntil = Date.now() + 400;
+                const urlbar = document.getElementById('urlbar');
+                if (urlbar) {
+                    urlbar.style.setProperty('display', 'none', 'important');
+                    setTimeout(() => { urlbar.style.removeProperty('display'); }, 50);
+                }
+            }
             this._floatingActive = v;
         },
 
