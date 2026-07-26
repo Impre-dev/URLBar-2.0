@@ -116,12 +116,6 @@
                 }
             } catch (e) { /* favicon-map.json manquant, fallback générique */ }
 
-            // Processes: désormais un PNG monochrome dans zen-about-favicons/icons/{light,dark}/processes.png
-            // Si le scan ne l'a pas trouvé, fallback sur l'icône chrome native
-            if (!this.iconCache['processes']) {
-                this.iconCache['processes'] = 'chrome://global/skin/icons/performance.svg';
-            }
-
             this.log(`iconCache: ${Object.keys(this.iconCache).length} icônes, ${Object.keys(this.domainToIconKey).length} domaines mappés`);
         },
 
