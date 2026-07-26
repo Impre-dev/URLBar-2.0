@@ -65,11 +65,20 @@
         domainToIconKey: {},
 
         // Auto-scan les dossiers d'icônes — aucune liste hardcoded
-        // Scan: zen-about-favicons/icons/ + CustomFavicon/icons/
+        // Scan: zen-about-favicons/icons/{light|dark}/ + CustomFavicon/icons/
         // Clé = nom de fichier sans extension, lowercased
         async loadIcons() {
+            // Detect theme: icons/light/ (white) for dark theme, icons/dark/ (black) for light theme
+            const mm = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+            let isDark = mm && mm.matches;
+            if (!isDark) {
+                const bg = window.getComputedStyle(document.documentElement).getPropertyValue('background-color');
+                const m = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+                if (m) isDark = (0.299 * parseInt(m[1]) + 0.587 * parseInt(m[2]) + 0.114 * parseInt(m[3])) / 255 < 0.5;
+            }
+            const aboutSubdir = isDark ? 'light' : 'dark';
             const dirs = [
-                PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'zen-about-favicons', 'icons'),
+                PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'zen-about-favicons', 'icons', aboutSubdir),
                 PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'CustomFavicon', 'icons'),
             ];
             for (const dir of dirs) {
