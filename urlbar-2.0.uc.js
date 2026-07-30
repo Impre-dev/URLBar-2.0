@@ -32,6 +32,7 @@
         'newtab':      'about:newtab',
         'debugging':   'about:debugging#/setup',
         'support':     'about:support',
+        'profiles':     'about:profiles',
     };
 
     // ═══════════════════════════════════════════════════
@@ -321,7 +322,7 @@
 
             gBrowser.addTabsProgressListener(redirectListener);
 
-            this.log('aboutRedirect actif (7 hash-redirects about: prêts)');
+            this.log('aboutRedirect actif (8 hash-redirects about: prêts)');
         },
 
         // ═══════════════════════════════════════════════════
