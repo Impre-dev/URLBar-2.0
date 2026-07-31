@@ -233,8 +233,20 @@
                         }
                         return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
                     }
+                    function isDevTools() {
+                        let href;
+                        try { href = content.location.href; } catch(e) { return false; }
+                        // DevTools docked (toolbox, webconsole, inspector, etc.)
+                        if (href.startsWith('chrome://devtools/')) return true;
+                        // Page d'accueil DevTools + about:devtools-toolbox
+                        if (href.startsWith('about:devtools')) return true;
+                        // Remote debugging
+                        if (href.startsWith('about:debugging')) return true;
+                        return false;
+                    }
                     addEventListener('keydown', function(e) {
                         if (e.key !== 'Enter') return;
+                        if (isDevTools()) return;
                         if (isInField()) return;
                         e.preventDefault();
                         e.stopPropagation();
