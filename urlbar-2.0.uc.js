@@ -114,6 +114,8 @@
       const dirs = [
         PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'zen-about-favicons', 'icons', aboutSubdir),
         PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'CustomFavicon', 'icons'),
+        // Canon chatbots — sous-dossier du canon CF
+        PathUtils.join(PathUtils.profileDir, 'chrome', 'sine-mods', 'CustomFavicon', 'icons', 'Chatbots'),
       ];
       for (const dir of dirs) {
         try {
@@ -146,7 +148,12 @@
           const map = JSON.parse(text);
           if (map.custom) {
             for (const [domain, filename] of Object.entries(map.custom)) {
-              this.domainToIconKey[domain] = filename.replace(/\.png$/i, '').toLowerCase();
+              // basename: "Chatbots/LeChat.png" → "lechat" (le map référence des sous-dossiers)
+              this.domainToIconKey[domain] = filename
+                .split(/[/\\]/)
+                .pop()
+                .replace(/\.png$/i, '')
+                .toLowerCase();
             }
           }
         }
