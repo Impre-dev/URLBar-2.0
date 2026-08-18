@@ -188,8 +188,11 @@
       try {
         const u = new URL(url);
         const host = u.hostname.replace(/^www\./, '');
-        // Lookup exact dans favicon-map.json
+        // Lookup exact puis suffixe: "chat.z.ai" → "z.ai" (logique CustomFavicon)
         if (this.domainToIconKey[host]) return this.domainToIconKey[host];
+        for (const [domain, key] of Object.entries(this.domainToIconKey)) {
+          if (host.endsWith('.' + domain)) return key;
+        }
         return host.split('.')[0].toLowerCase();
       } catch (e) {}
       return null;
