@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.5.0
+// @version        1.6.0
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background + compact mode TB fix
 // @author         Impre
 // @include        main
@@ -13,16 +13,42 @@
   //  Config — Compact set patterns
   //  URLs matching these patterns = compact set
   //  Everything else = extended set
+  //
+  //  Éditable via la pref `user.urlbar.compactPatterns` :
+  //  fragments regex séparés par `|` (ex: "^about:|zen-browser\.app").
+  //  Recompilé live à chaque changement (observer, pas de polling).
   // ═══════════════════════════════════════════════════
 
-  const COMPACT_PATTERNS = [
-    /^about:/, // about: pages directes (existantes)
-    /^https:\/\/example\.com#zenabout=/, // hash-redirect about: bookmarks
-    /^https:\/\/docs\.zen-browser\.app/, // Zen docs
-    /^https:\/\/zen-browser\.app/, // Zen website (release-notes, mods)
-    /^https:\/\/sineorg\.github\.io/, // Sine store
-    /^chrome:\/\/sine\/content\/MyHub\//, // MyHub (page locale hub)
-  ];
+  const PREF_COMPACT = 'user.urlbar.compactPatterns';
+  const COMPACT_DEFAULT =
+    '^about:|^https://example\\.com#zenabout=|^https://docs\\.zen-browser\\.app|^https://zen-browser\\.app|^https://sineorg\\.github\\.io|^chrome://sine/content/';
+
+  // string pref → array de RegExp (fragments invalides ignorés avec warning)
+  function compileCompactPatterns(value) {
+    return String(value)
+      .split('|')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((s) => {
+        try {
+          return new RegExp(s);
+        } catch (e) {
+          console.warn('[URLBar-2.0] pattern compact invalide ignoré:', s);
+          return null;
+        }
+      })
+      .filter(Boolean);
+  }
+
+  let COMPACT_PATTERNS = compileCompactPatterns(Services.prefs.getStringPref(PREF_COMPACT, COMPACT_DEFAULT));
+
+  // Recompilation live (event-driven) — le handler ne réécrit JAMAIS la pref
+  // observée → aucun risque de récursion (leçon MyHub 2026-08-18)
+  Services.prefs.addObserver(PREF_COMPACT, {
+    observe(_subject, _topic, name) {
+      COMPACT_PATTERNS = compileCompactPatterns(Services.prefs.getStringPref(name, COMPACT_DEFAULT));
+    },
+  });
 
   // Hash → real about: URL mapping
   const ABOUT_MAP = {
@@ -139,8 +165,9 @@
     // 5. hostname.split('.')[0] → fallback générique
     getIconKey(url) {
       if (!url) return null;
-      // MyHub (page locale chrome://sine)
-      if (/^chrome:\/\/sine\/content\/MyHub\//.test(url)) return 'myhub';
+      // Pages locales des mods Sine: chrome://sine/content/<modId>/… → clé '<modId>'
+      const sineMatch = url.match(/^chrome:\/\/sine\/content\/([^/]+)\//);
+      if (sineMatch) return sineMatch[1].toLowerCase();
       // Hash URL: #zenabout=config
       const hashMatch = url.match(/#zenabout=(.+)$/);
       if (hashMatch) return hashMatch[1].toLowerCase();
