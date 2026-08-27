@@ -165,6 +165,9 @@
     },
 
     // Extrait une clé d'icône depuis une URL — essaie plusieurs stratégies
+    // 0. favicon-map.json — clés PRÉFIXE URL (sites locaux, ex: chrome://sine/…) :
+    //    startsWith sur l'URL complète, AVANT la règle sine générique ci-dessous
+    //    (permet une icône dédiée par page de mod, ex: MyHistory ≠ Sine)
     // 1. favicon-map.json (lookup exact par hostname) ← le plus fiable
     // 2. #zenabout=config → 'config'
     // 3. about:config → 'config'
@@ -172,6 +175,10 @@
     // 5. hostname.split('.')[0] → fallback générique
     getIconKey(url) {
       if (!url) return null;
+      // favicon-map.json — clés préfixe (contiennent '/' ou ':', jamais un hostname)
+      for (const [prefix, key] of Object.entries(this.domainToIconKey)) {
+        if ((prefix.includes('/') || prefix.includes(':')) && url.startsWith(prefix)) return key;
+      }
       // Pages locales des mods Sine: chrome://sine/content/<modId>/… → clé '<modId>'
       const sineMatch = url.match(/^chrome:\/\/sine\/content\/([^/]+)\//);
       if (sineMatch) return sineMatch[1].toLowerCase();
