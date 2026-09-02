@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.6.1
+// @version        1.7.0
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background + compact mode TB fix
 // @author         Impre
 // @include        main
@@ -221,7 +221,7 @@
       }
       window.__URLBar20Init = true;
 
-      this.middleClickFocus(); // Feature #1: Floating URL bar
+      this.ctrlSFocus(); // Feature #1: Floating URL bar
       this.middleClickBackground(); // Middle-click favoris → background tab
       this.aboutRedirect(); // Feature #2a: Hash-redirect about: pages
       this.loadIcons(); // Charge les icônes about: en mémoire
@@ -232,51 +232,44 @@
     },
 
     // ═══════════════════════════════════════════════════
-    // Module: Middle-click → Floating URL Bar (Feature #1)
+    // Module: Ctrl+S → Floating URL Bar (Feature #1)
     // ═══════════════════════════════════════════════════
-    middleClickFocus() {
+    ctrlSFocus() {
       const PREF_URLBAR = 'zen.urlbar.behavior';
 
-      // Tracker les ouvertures d'onglets pour détecter les clics sur liens.
-      // On NE FAIT PAS preventDefault — Firefox gère l'événement naturellement:
-      //   - Clic sur un lien → nouvel onglet (TabOpen) → on détecte → on skip l'urlbar
-      //   - Clic sur le background → rien ne se passe → on ouvre l'urlbar
-      // Firefox fait déjà toute la détection (liens, boutons, form elements, etc.)
-      let lastTabOpen = 0;
-      gBrowser.tabContainer.addEventListener('TabOpen', () => {
-        lastTabOpen = Date.now();
-      });
-
+      // ── CTRL+S → floating URL bar (focus chrome) ──
+      // Ne fire que quand le focus est dans le chrome (toolbar, urlbar…).
+      // Le contenu web est géré par le frame script ci-dessous.
+      // Option A: priorité totale — Ctrl+S imposé, "Enregistrer sous" bloqué.
+      // Debounce 150ms: anti double-trigger (auto-repeat clavier / double tap)
+      let lastCtrlS = 0;
       window.addEventListener(
-        'mousedown',
+        'keydown',
         (e) => {
-          if (e.button !== 1) return;
+          if (e.key !== 's' || !e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
           // Anti-conflit OneForAll: skip quand le panel ctrlTab est ouvert
           if (window.ctrlTab && window.ctrlTab.isOpen) return;
-          if (e.target.closest('#navigator-toolbox, #urlbar')) return;
+          // Focus déjà dans l'urlbar normale → pas de bascule en mode flottant
+          if (gURLBar.focused && !this.floatingActive) return;
 
-          // Capturer l'état SYNCHRONEMENT avant que le blur ne fire
-          // (le middle-click sur le background blur l'urlbar instantanément)
-          const wasActive = this.floatingActive;
+          // Bloquer "Enregistrer la page sous…" (toujours, même debouncé)
+          e.preventDefault();
 
-          // NE PAS preventDefault — laisser Firefox traiter l'événement
-          const self = this;
-          setTimeout(() => {
-            // Un onglet s'est ouvert = clic sur lien → ne pas ouvrir l'urlbar
-            if (Date.now() - lastTabOpen < 250) return;
+          // Debounce: ignorer les triggers rapprochés (< 150ms)
+          const now = Date.now();
+          if (now - lastCtrlS < 150) return;
+          lastCtrlS = now;
 
-            // Toggle: si était active → fermer, sinon → ouvrir
-            if (wasActive) {
-              self.floatingActive = false;
-              Services.prefs.setStringPref(PREF_URLBAR, 'normal');
-              return;
-            }
+          // Toggle: si active → fermer, sinon → ouvrir
+          if (this.floatingActive) {
+            this.floatingActive = false;
+            Services.prefs.setStringPref(PREF_URLBAR, 'normal');
+            return;
+          }
 
-            // Pas d'onglet = clic sur background → urlbar flottante
-            self.floatingActive = true;
-            Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
-            document.getElementById('Browser:OpenLocation').doCommand();
-          }, 200);
+          this.floatingActive = true;
+          Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
+          document.getElementById('Browser:OpenLocation').doCommand();
         },
         true,
       );
@@ -288,7 +281,7 @@
         }
       });
 
-      // ── ENTER → floating URL bar ──
+      // ── ENTER + CTRL+S (contenu web) → floating URL bar ──
       // Le frame script intercepte Enter directement dans le contenu web.
       // Avantage: accès complet au DOM (activeElement, isContentEditable, etc.)
       //   - Input/Textarea/contentEditable focusé → on laisse passer (form submit)
@@ -319,8 +312,16 @@
                         return false;
                     }
                     addEventListener('keydown', function(e) {
-                        if (e.key !== 'Enter') return;
                         if (isDevTools()) return;
+                        // Ctrl+S → urlbar flottante (Option A: imposé partout,
+                        // priorité totale sur les web apps — capture phase)
+                        if (e.key === 's' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            sendAsyncMessage('UrlBar20:OpenUrlBar', {});
+                            return;
+                        }
+                        if (e.key !== 'Enter') return;
                         if (isInField()) return;
                         e.preventDefault();
                         e.stopPropagation();
@@ -333,12 +334,16 @@
       // Chrome: recevoir les messages du frame script
       Services.mm.addMessageListener('UrlBar20:OpenUrlBar', () => {
         if (gURLBar.focused) return;
+        // Debounce partagé avec le listener chrome (anti double-trigger)
+        const now = Date.now();
+        if (now - lastCtrlS < 150) return;
+        lastCtrlS = now;
         this.floatingActive = true;
         Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
         document.getElementById('Browser:OpenLocation').doCommand();
       });
 
-      this.log('middleClickFocus actif (middle-click + Enter → floating urlbar ✨)');
+      this.log('ctrlSFocus actif (Ctrl+S + Enter → floating urlbar ✨)');
     },
 
     // ═══════════════════════════════════════════════════

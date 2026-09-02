@@ -3,12 +3,12 @@
   "name": "URLBar 2.0",
   "description": "Révolution URL bar : floating spotlight, bookmarks dynamiques, middle-click background tabs",
   "author": "Impre",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "js": true,
   "scripts": {
     "urlbar-2.0.uc.js": {
       "name": "URLBar 2.0",
-      "description": "Floating URL bar au middle-click + bookmarks dynamiques + sidebots + middle-click background",
+      "description": "Floating URL bar au Ctrl+S + bookmarks dynamiques + sidebots + middle-click background",
       "include": ["chrome://browser/content/browser.xhtml"]
     }
   },
