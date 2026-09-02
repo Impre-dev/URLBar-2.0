@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.6.0
+// @version        1.6.1
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background + compact mode TB fix
 // @author         Impre
 // @include        main
@@ -102,13 +102,21 @@
     // Scan: zen-about-favicons/icons/{light|dark}/ + CustomFavicon/icons/
     // Clé = nom de fichier sans extension, lowercased
     async loadIcons() {
-      // Detect theme: icons/light/ (white) for dark theme, icons/dark/ (black) for light theme
-      const mm = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
-      let isDark = mm && mm.matches;
-      if (!isDark) {
-        const bg = window.getComputedStyle(document.documentElement).getPropertyValue('background-color');
-        const m = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-        if (m) isDark = (0.299 * parseInt(m[1]) + 0.587 * parseInt(m[2]) + 0.114 * parseInt(m[3])) / 255 < 0.5;
+      // Thème : pref Zen `zen.view.window.scheme` (0=dark, 1=light, 2=suit l'OS).
+      // icons/light/ (blanc) en thème sombre, icons/dark/ (noir) en clair.
+      // ⚠️ Ne PAS revenir à prefers-color-scheme / luminance du fond de fenêtre :
+      // en fenêtre transparente/Mica (allow_transparent_browser + mica), le fond
+      // est rgba(0,0,0,0) et la media query ne suit plus le thème Zen (bug 2026-09-02).
+      // Mode 2 (auto) : suit l'OS → prefers-color-scheme est le bon signal là.
+      let isDark;
+      try {
+        const scheme = Services.prefs.getIntPref('zen.view.window.scheme', 2);
+        isDark = scheme === 0 ? true : scheme === 1 ? false : null;
+      } catch (e) {
+        isDark = null;
+      }
+      if (isDark === null) {
+        isDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
       }
       const aboutSubdir = isDark ? 'light' : 'dark';
       const dirs = [
