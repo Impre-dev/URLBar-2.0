@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.7.0
+// @version        1.9.0
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background + compact mode TB fix
 // @author         Impre
 // @include        main
@@ -62,6 +62,33 @@
     profiles: 'about:profiles',
   };
 
+  // Compact set synthétique — FX 158 / Zen 1.23.3b n'expose plus les pages
+  // about:/zen dans les résultats à requête vide (source changée, constat 16/10).
+  // Le mod s'autofournit son compact set : indépendant de la source native.
+  // Éditer ces lignes pour ajuster ce que montre l'urlbar en mode compact.
+  const COMPACT_INJECT = [
+    { url: 'about:config', title: 'Config' },
+    { url: 'about:addons', title: 'Addons' },
+    { url: 'about:preferences', title: 'Réglages' },
+    { url: 'about:debugging#/setup', title: 'Debug' },
+    { url: 'about:processes', title: 'Processus' },
+    { url: 'about:support', title: 'Support' },
+    { url: 'about:profiles', title: 'Profils' },
+    { url: 'about:newtab', title: 'Accueil' },
+    { url: 'https://docs.zen-browser.app/', title: 'Zen Docs' },
+    { url: 'https://sineorg.github.io/', title: 'Sine' },
+  ];
+
+  // Accès aux liens épinglés (browser.newtabpage.pinned) — la vraie source de
+  // vérité de l'opérateur : le compact et l'extended s'alimentent des pins,
+  // pas de la source FX dont le provider urlbar a changé en 1.23.3b.
+  let NewTabUtils = null;
+  try {
+    NewTabUtils = ChromeUtils.importESModule('resource://gre/modules/NewTabUtils.sys.mjs').NewTabUtils;
+  } catch (e) {
+    console.warn('[URLBar-2.0] NewTabUtils indisponible — pins ignorés');
+  }
+
   // ═══════════════════════════════════════════════════
 
   const URLBar20 = {
@@ -87,6 +114,14 @@
             urlbar.style.removeProperty('display');
           }, 50);
         }
+      }
+      // Zone de trigger au bord : désactivée quand l'urlbar flottante est
+      // ouverte (pas de re-trigger, pas de blocage de clics au bord)
+      this._edgeCancelDwell?.();
+      const edgeStrip = document.getElementById('urlbar-edge-trigger');
+      if (edgeStrip) {
+        if (v) edgeStrip.style.setProperty('pointer-events', 'none', 'important');
+        else edgeStrip.style.removeProperty('pointer-events');
       }
       this._floatingActive = v;
     },
@@ -222,6 +257,7 @@
       window.__URLBar20Init = true;
 
       this.ctrlSFocus(); // Feature #1: Floating URL bar
+      this.edgeHoverTrigger(); // Feature #5: Edge hover → floating URL bar
       this.middleClickBackground(); // Middle-click favoris → background tab
       this.aboutRedirect(); // Feature #2a: Hash-redirect about: pages
       this.loadIcons(); // Charge les icônes about: en mémoire
@@ -347,6 +383,67 @@
     },
 
     // ═══════════════════════════════════════════════════
+    // Module: Edge Hover Trigger (Feature #5)
+    //
+    // Zone invisible (6px) sur le bord OPPOSÉ à la sidebar Zen
+    // (droite par défaut, gauche si zen-right-side — même logique
+    // que le rail BetterSidebot, position 100% CSS via l'attribut
+    // dynamique posé/retiré en live par Zen).
+    //
+    // Hover maintenu 250ms (dwell anti-graze : un survol en vol
+    // n'ouvre rien) → ouvre l'urlbar flottante, même pipeline que
+    // Ctrl+S (pref floating-on-type + Browser:OpenLocation).
+    // Le hover n'ouvre JAMAIS plus : la fermeture reste blur/Escape/Ctrl+S.
+    //
+    // Event-driven : mouseenter/mouseleave sur la zone, zéro polling.
+    // Un timer unique (dwell) confirme l'intention — pattern debounce.
+    // ═══════════════════════════════════════════════════
+    edgeHoverTrigger() {
+      const PREF_URLBAR = 'zen.urlbar.behavior';
+      const DWELL_MS = 250; // intention confirmée : évite les survols en vol
+      const COOLDOWN_MS = 250; // au-delà du hover lock (400ms) post-fermeture
+
+      const browserEl = document.getElementById('browser');
+      if (!browserEl) {
+        setTimeout(() => this.edgeHoverTrigger(), 500);
+        return;
+      }
+      if (document.getElementById('urlbar-edge-trigger')) return;
+
+      const strip = document.createXULElement('vbox');
+      strip.id = 'urlbar-edge-trigger';
+      browserEl.appendChild(strip);
+
+      let dwellTimer = null;
+      this._edgeCancelDwell = () => {
+        if (dwellTimer) {
+          clearTimeout(dwellTimer);
+          dwellTimer = null;
+        }
+      };
+
+      strip.addEventListener('mouseenter', () => {
+        if (this.floatingActive) return; // le hover n'ouvre que, jamais toggle
+        if (gURLBar.focused) return; // focus déjà dans l'urlbar
+        if (Date.now() < this._hoverLockUntil + COOLDOWN_MS) return; // post-fermeture
+        this._edgeCancelDwell();
+        dwellTimer = setTimeout(() => {
+          dwellTimer = null;
+          if (this.floatingActive || gURLBar.focused) return;
+          if (Date.now() < this._hoverLockUntil + COOLDOWN_MS) return;
+          this.floatingActive = true;
+          Services.prefs.setStringPref(PREF_URLBAR, 'floating-on-type');
+          document.getElementById('Browser:OpenLocation').doCommand();
+          this.log('edge hover → urlbar flottante ✨');
+        }, DWELL_MS);
+      });
+
+      strip.addEventListener('mouseleave', () => this._edgeCancelDwell());
+
+      this.log(`edgeHoverTrigger actif (bord opposé sidebar, dwell ${DWELL_MS}ms)`);
+    },
+
+    // ═══════════════════════════════════════════════════
     // Module: Middle-click favoris → background tab
     // ═══════════════════════════════════════════════════
     middleClickBackground() {
@@ -441,20 +538,54 @@
       const origOnQueryResults = gURLBar.view.onQueryResults.bind(gURLBar.view);
 
       gURLBar.view.onQueryResults = function (ctx) {
-        // Ne filtrer QUE les top sites (recherche vide)
+        // Ne traiter QUE les top sites (recherche vide)
         if (ctx.results && ctx.results.length && ctx.trimmedSearchString === '') {
           const savedResults = ctx.results;
           const wantCompact = !self.floatingActive;
 
-          ctx.results = savedResults.filter((r) => {
-            const url = r.payload?.url || '';
-            const matchesCompact = COMPACT_PATTERNS.some((p) => p.test(url));
-            return wantCompact ? matchesCompact : !matchesCompact;
-          });
+          // Fabrique une vraie instance UrlbarResult (la vue appelle des
+          // méthodes du prototype — un clone spreadé les perd).
+          // ⚠️ Constructeur FX 158 : UN objet déstructuré { type, source,
+          // payload }, payload validé contre RESULT_PAYLOAD_SCHEMA[URL] —
+          // champs du schéma uniquement, le spread du template est sûr.
+          const tpl = savedResults[0];
+          const makeResult = (entry) => {
+            const icon = self.iconCache[self.getIconKey(entry.url)];
+            return new tpl.constructor({
+              type: tpl.type,
+              source: tpl.source,
+              payload: {
+                ...tpl.payload,
+                url: entry.url,
+                title: entry.title,
+                ...(icon ? { icon } : {}),
+              },
+            });
+          };
 
-          // Safety: si le filtre renvoie 0 résultats, garder l'original
-          if (ctx.results.length === 0) {
-            ctx.results = savedResults;
+          // Liens épinglés de l'opérateur (lus live à chaque query — zéro cache)
+          const pinned = (NewTabUtils?.pinnedLinks.links || [])
+            .filter(Boolean)
+            .filter((l) => l.url && COMPACT_PATTERNS.some((p) => p.test(l.url)) === wantCompact)
+            .map((l) => ({ url: l.url, title: l.title || l.label || l.url }));
+
+          if (wantCompact) {
+            // Compact : pins matchant les patterns compact (about:*, MyHub,
+            // MyHistory, Sine-Mods…) + extras statiques (dedupe par URL).
+            const seen = new Set(pinned.map((e) => e.url));
+            const entries = [...pinned, ...COMPACT_INJECT.filter((e) => !seen.has(e.url))];
+            ctx.results = entries.map(makeResult);
+          } else {
+            // Extended : les vrais raccourcis d'abord (pins hors compact :
+            // YouTube, VoirAnime, Google Flow, Photoroom…), puis les résultats
+            // natifs fréments (dédupe par URL, les pins gagnent).
+            const seen = new Set(pinned.map((e) => e.url));
+            const native = savedResults.filter((r) => {
+              const url = r.payload?.url || '';
+              return url && !seen.has(url) && !COMPACT_PATTERNS.some((p) => p.test(url));
+            });
+            ctx.results = [...pinned.map(makeResult), ...native];
+            if (ctx.results.length === 0) ctx.results = savedResults;
           }
 
           // Injecter les icônes depuis iconCache (tous modes)
