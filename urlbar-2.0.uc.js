@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name           URLBar 2.0
-// @version        1.9.0
+// @version        1.9.1
 // @description    Floating spotlight URL bar + bookmarks dynamiques + icon injection + middle-click background + compact mode TB fix
 // @author         Impre
 // @include        main
@@ -409,6 +409,41 @@
         return;
       }
       if (document.getElementById('urlbar-edge-trigger')) return;
+
+      // Styles auto-injectés en <style> — immunisés contre le cache mods.json
+      // de Sine (un style.chrome ajouté après install n'est jamais enregistré,
+      // toggle sans effet — constat 16/10). Source unique : ce template
+      // (chrome.css supprimé). La bascule gauche/droite suit l'attribut
+      // dynamique zen-right-side posé par Zen — pur CSS, réagit en live.
+      const STYLE_ID = 'urlbar-edge-trigger-style';
+      if (!document.getElementById(STYLE_ID)) {
+        const styleEl = document.createElementNS('http://www.w3.org/1999/xhtml', 'style');
+        styleEl.id = STYLE_ID;
+        styleEl.textContent = `
+#urlbar-edge-trigger {
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  width: 6px !important;
+  height: 100% !important;
+  z-index: 9998 !important; /* sous dock/rail BetterSidebot (9999) */
+  background: transparent !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  appearance: none !important;
+  -moz-appearance: none !important;
+}
+html[zen-right-side="true"] #urlbar-edge-trigger {
+  right: auto !important;
+  left: 0 !important;
+}
+:root[inDOMFullscreen] #urlbar-edge-trigger {
+  display: none !important;
+}
+`;
+        document.documentElement.appendChild(styleEl);
+      }
 
       const strip = document.createXULElement('vbox');
       strip.id = 'urlbar-edge-trigger';

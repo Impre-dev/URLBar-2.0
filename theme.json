@@ -3,7 +3,7 @@
   "name": "URLBar 2.0",
   "description": "Révolution URL bar : floating spotlight, bookmarks dynamiques, middle-click background tabs",
   "author": "Impre",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "js": true,
   "scripts": {
     "urlbar-2.0.uc.js": {
@@ -12,7 +12,6 @@
       "include": ["chrome://browser/content/browser.xhtml"]
     }
   },
-  "style": { "chrome": "chrome.css" },
   "tags": ["Javascript", "Zen"],
   "fork": ["zen"]
 }
