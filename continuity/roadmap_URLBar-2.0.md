@@ -38,4 +38,5 @@
 
 | Version | Contenu | Commit |
 |---|---|---|
-| v1.9.0 | Adaptation FX 158/Zen 1.23.3b (compact/extended depuis les pins + COMPACT_INJECT, vraies instances UrlbarResult) + edge hover trigger (strip 6px, dwell 250ms, cooldown) — **hover inerte en attendant l'auto-injection CSS** | `ceb17bc` |
+| v1.9.0 | Adaptation FX 158/Zen 1.23.3b (compact/extended depuis les pins + COMPACT_INJECT, vraies instances UrlbarResult) + edge hover trigger (strip 6px, dwell 250ms, cooldown) — hover inerte (CSS non enregistrée) | `ceb17bc` |
+| v1.9.1 | Auto-injection CSS du strip en `<style>` JS — source unique, immunisée au cache mods.json — **hover validé opérateur** | `477096d` |
